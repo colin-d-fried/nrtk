@@ -286,21 +286,35 @@ class PybsmPerturber(PybsmPerturberMixin):
         """Returns a representation of the perturber including sensor and scenario names."""
         return self.__str__()
 
+    def _update_simulator_rng(self) -> None:
+        """Propagate ``self._rng`` to the pyBSM simulator's internal RNG.
+
+        Directly reassigns the simulator's private ``_rng`` attribute rather than
+        recreating the simulator (which would wipe cached atmospheric data).
+        Isolating this private access in a single helper makes it easy to swap for
+        a public pyBSM API once one exists.
+
+        TODO: Replace the private ``_rng`` assignment below with a public pyBSM
+        call (e.g. ``self._simulator.set_random_seed()``) once pyBSM exposes one.
+        Tracking upstream: https://github.com/Kitware/pybsm/issues (add a
+        dedicated issue link when filed).
+        """
+        # ``hasattr`` guard is needed because ``RandomPerturbImage.__init__`` calls
+        # ``_set_seed`` (and therefore this helper) before subclasses have
+        # constructed ``self._simulator``.
+        if hasattr(self, "_simulator"):
+            self._simulator._rng = self._rng  # noqa: SLF001
+
     @override
     def _set_seed(self) -> None:
         """Reset numpy RNG and update the simulator's RNG reference.
 
-        Directly reassigns the simulator's internal RNG rather than recreating
-        the simulator, which would wipe the cached atmospheric data.
-
-        The hasattr guard is needed because RandomPerturbImage.__init__ calls
-        _set_seed() before subclasses have created the simulator.
-        TODO: Replace with self._simulator.set_random_seed() once pyBSM
-        exposes a public API for reseeding (avoids accessing private _rng).
+        Delegates the private pyBSM RNG reassignment to
+        :meth:`_update_simulator_rng` so the dependency on pyBSM's internals is
+        encapsulated in one place.
         """
         super()._set_seed()
-        if hasattr(self, "_simulator"):
-            self._simulator._rng = self._rng  # noqa: SLF001
+        self._update_simulator_rng()
 
     @override
     def get_config(self) -> dict[str, Any]:

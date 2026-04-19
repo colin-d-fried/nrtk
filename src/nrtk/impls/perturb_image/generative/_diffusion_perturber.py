@@ -23,7 +23,9 @@ Example:
 Note:
     This implementation uses the Instruct Pix2Pix model for prompt-based image transformations.
     The model is loaded on first use and cached for subsequent operations.
-    Bounding boxes are not expected to be accurate after perturbation due to the generative nature of diffusion.
+    Bounding boxes are rescaled to the perturbed image's dimensions (since the diffusion
+    pipeline resizes the input), but they may still be spatially inaccurate because the
+    generative process can shift, remove, or introduce content independent of the original geometry.
 """
 
 from __future__ import annotations
@@ -272,7 +274,9 @@ class DiffusionPerturber(TorchRandomPerturbImage):
         Returns:
             A tuple containing:
             - Perturbed RGB image as uint8 numpy array (H, W, 3) at diffusion model resolution
-            - Updated bounding boxes (currently returned unchanged)
+            - Bounding boxes rescaled to the perturbed image's dimensions; these may still
+              be spatially inaccurate because the generative process can shift, remove, or
+              introduce content independent of the original geometry.
 
         Raises:
             ValueError:
@@ -286,6 +290,8 @@ class DiffusionPerturber(TorchRandomPerturbImage):
             return perturbed_image, perturbed_boxes
 
         try:
+            original_shape = perturbed_image.shape
+
             pil_image = fromarray(perturbed_image).convert("RGB")
 
             resized_image = self._resize_image(pil_image)
@@ -309,6 +315,13 @@ class DiffusionPerturber(TorchRandomPerturbImage):
                 perturbed_image = np.array(_images, dtype=np.uint8)
             else:
                 perturbed_image = np.array(_images[0], dtype=np.uint8)
+
+            if perturbed_boxes is not None:
+                perturbed_boxes = self._rescale_boxes(
+                    boxes=perturbed_boxes,
+                    orig_shape=original_shape,
+                    new_shape=perturbed_image.shape,
+                )
 
             return perturbed_image, perturbed_boxes
 

@@ -103,6 +103,48 @@ class TestDiffusionPerturber(PerturberTestsMixin):
     @patch(_DIFFUSION_TORCH)
     @patch(_DIFFUSION_PIPELINE)
     @patch(_DIFFUSION_SCHEDULER)
+    def test_perturb_rescales_boxes_when_resized(
+        self,
+        mock_scheduler_class: MagicMock,
+        mock_pipeline_class: MagicMock,
+        mock_torch: MagicMock,
+        mock_base_torch: MagicMock,  # noqa: ARG002
+    ) -> None:
+        """Bounding boxes should be rescaled to match the diffusion output dimensions."""
+        # Pipeline returns an image at half the input dimensions to simulate diffusion
+        # resize behavior.
+        mock_pipeline = MagicMock()
+        mock_out_image = np.zeros((128, 128, 3), dtype=np.uint8)
+        mock_pipeline.return_value = ([mock_out_image], False)
+        mock_pipeline_class.from_pretrained.return_value = mock_pipeline
+        mock_pipeline.to.return_value = mock_pipeline
+        mock_pipeline.scheduler.config = {}
+        mock_scheduler_class.from_config.return_value = MagicMock()
+        mock_torch.cuda.is_available.return_value = True
+
+        boxes: list[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] = [
+            (AxisAlignedBoundingBox(min_vertex=(0, 0), max_vertex=(100, 100)), {"c": 0.5}),
+        ]
+
+        perturber = DiffusionPerturber(model_name="test/model", device="cpu", prompt="test", seed=42)
+        image = np.ones((256, 256, 3), dtype=np.uint8)
+
+        perturbed_image, output_boxes = perturber.perturb(image=image, boxes=boxes)
+
+        assert perturbed_image.shape == (128, 128, 3)
+        assert output_boxes is not None
+        rescaled = list(output_boxes)
+        assert len(rescaled) == 1
+        rescaled_box, rescaled_scores = rescaled[0]
+        assert tuple(rescaled_box.min_vertex) == (0.0, 0.0)
+        # Input image was 256x256 and output is 128x128, so box coords halve.
+        assert tuple(rescaled_box.max_vertex) == (50.0, 50.0)
+        assert rescaled_scores == {"c": 0.5}
+
+    @patch(_BASE_TORCH)
+    @patch(_DIFFUSION_TORCH)
+    @patch(_DIFFUSION_PIPELINE)
+    @patch(_DIFFUSION_SCHEDULER)
     def test_non_deterministic_default(
         self,
         mock_scheduler_class: MagicMock,
