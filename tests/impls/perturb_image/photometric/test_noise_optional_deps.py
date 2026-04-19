@@ -12,7 +12,9 @@ class TestNoiseImportGuard(ImportGuardTestsMixin):
     DEPS_TO_MOCK = ["skimage.util"]
     CLASSES = [
         "GaussianNoisePerturber",
+        "LocalvarNoisePerturber",
         "PepperNoisePerturber",
+        "PoissonNoisePerturber",
         "SaltAndPepperNoisePerturber",
         "SaltNoisePerturber",
         "SpeckleNoisePerturber",
@@ -35,7 +37,9 @@ def test_skimage_public_imports() -> None:
     try:
         from nrtk.impls.perturb_image.photometric.noise import (
             GaussianNoisePerturber,
+            LocalvarNoisePerturber,
             PepperNoisePerturber,
+            PoissonNoisePerturber,
             SaltAndPepperNoisePerturber,
             SaltNoisePerturber,
             SpeckleNoisePerturber,
@@ -43,7 +47,9 @@ def test_skimage_public_imports() -> None:
 
         del (
             GaussianNoisePerturber,
+            LocalvarNoisePerturber,
             PepperNoisePerturber,
+            PoissonNoisePerturber,
             SaltAndPepperNoisePerturber,
             SaltNoisePerturber,
             SpeckleNoisePerturber,

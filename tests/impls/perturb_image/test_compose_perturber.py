@@ -5,7 +5,7 @@ import unittest.mock as mock
 from collections.abc import Hashable, Iterable
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -119,6 +119,67 @@ class TestComposePerturber:
         _, out_boxes = inst.perturb(image=np.ones((256, 256, 3)), boxes=boxes)
         assert boxes == out_boxes
 
+    def test_invalid_mode_raises(self) -> None:
+        """Unknown mode values should raise at construction time."""
+        with pytest.raises(ValueError, match=r"Invalid mode"):
+            ComposePerturber(perturbers=[FakePerturber()], mode="not-a-mode")
+
+    def test_blend_mode_averages_outputs(self) -> None:
+        """In blend mode each perturber is run on the original image and outputs are averaged."""
+
+        def _add_one(
+            image: np.ndarray,
+            boxes: Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None = None,
+        ) -> tuple[np.ndarray, Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None]:
+            return np.copy(image) + 1, deepcopy(boxes)
+
+        def _add_three(
+            image: np.ndarray,
+            boxes: Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None = None,
+        ) -> tuple[np.ndarray, Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None]:
+            return np.copy(image) + 3, deepcopy(boxes)
+
+        image = np.zeros((3, 3, 3), dtype=np.float64)
+        inst = ComposePerturber(
+            perturbers=cast("list[PerturbImage]", [_add_one, _add_three]),
+            mode="blend",
+        )
+        out, out_boxes = inst.perturb(image=image)
+        # (0+1 + 0+3) / 2 = 2 for every pixel.
+        assert np.allclose(out, 2.0)
+        assert out_boxes is None
+
+    def test_blend_mode_shape_mismatch_raises(self) -> None:
+        """Blend mode requires all perturbers to produce the same output shape."""
+
+        def _unchanged(
+            image: np.ndarray,
+            boxes: Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None = None,
+        ) -> tuple[np.ndarray, Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None]:
+            return np.copy(image), deepcopy(boxes)
+
+        def _smaller(
+            image: np.ndarray,
+            boxes: Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None = None,
+        ) -> tuple[np.ndarray, Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None]:
+            return np.copy(image)[:2, :2], deepcopy(boxes)
+
+        image = np.zeros((4, 4, 3), dtype=np.float64)
+        inst = ComposePerturber(
+            perturbers=cast("list[PerturbImage]", [_unchanged, _smaller]),
+            mode="blend",
+        )
+        with pytest.raises(ValueError, match=r"same shape"):
+            inst.perturb(image=image)
+
+    def test_blend_mode_config_roundtrip(self) -> None:
+        """Mode should round-trip through get_config / from_config."""
+        inst = ComposePerturber(perturbers=[FakePerturber(), FakePerturber()], mode="blend")
+        cfg = inst.get_config()
+        assert cfg["mode"] == "blend"
+        for i in configuration_test_helper(inst):
+            assert i.mode == "blend"
+
     def test_bounding_box_threading(self) -> None:
         """Test that bounding boxes are properly threaded through sequential perturbers."""
         image = np.arange(64, dtype=np.uint8).reshape(8, 8, 1)  # noqa: FKA100, RUF100
@@ -154,7 +215,6 @@ class TestComposePerturber:
         inst = ComposePerturber()
         out_image = perturber_assertions(perturb=inst.perturb, image=image)
 
-        cfg = {}
-        cfg["perturbers"] = []
+        cfg = {"perturbers": [], "mode": "sequential"}
         assert (out_image == image).all()
         assert inst.get_config() == cfg
