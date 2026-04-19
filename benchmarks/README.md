@@ -47,7 +47,12 @@ Pairs are matched by file **stem** across the two directories (so
 | `brightness`     | `BrightnessPerturber(factor=1.0 + 0.9 * severity)`                   | none            |
 | `gaussian_noise` | `GaussianNoisePerturber(mean=0.0, var=0.0001 + 0.05 * severity)`     | none            |
 | `pybsm_maritime` | `maritime_perturber(ihaze=1 + round(severity * 2))` (Phase 3 preset) | `pybsm`         |
-| `random_crop`    | `RandomCropPerturber(crop_size=None)`                                | `graphics`      |
+
+Geometric perturbers (e.g. `RandomCropPerturber`) are intentionally omitted from
+this scaffold because they require the image dimensions at construction time to
+produce a meaningful, severity-scaled output — the benchmark currently resolves
+perturbers before loading any images. Wire them in after you've added an
+"inspect the first pair, then build the perturber" step to `_evaluate_pair`.
 
 ## Supplying datasets
 

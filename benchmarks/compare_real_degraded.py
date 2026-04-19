@@ -135,26 +135,20 @@ def _build_pybsm_maritime(*, severity: float, seed: int) -> PerturbImage:
     try:
         from nrtk.impls.perturb_image.optical._pybsm_presets import maritime_perturber
     except ImportError as exc:
-        msg = "pybsm extra is required for --perturber pybsm_maritime; install 'nrtk[pybsm]'."
+        msg = (
+            "Could not import 'nrtk.impls.perturb_image.optical._pybsm_presets.maritime_perturber'. "
+            "This preset is provided by Phase 3 of the enhancement plan (PR #3). If Phase 3 is merged "
+            "and you still see this, make sure the pybsm extra is installed: install 'nrtk[pybsm]'."
+        )
         raise ImportError(msg) from exc
     ihaze = 1 + int(round(severity * 2))
     return maritime_perturber(seed=seed, is_static=True, ihaze=ihaze)
-
-
-def _build_random_crop(*, severity: float, seed: int) -> PerturbImage:  # noqa: ARG001
-    try:
-        from nrtk.impls.perturb_image.geometric.random import RandomCropPerturber
-    except ImportError as exc:
-        msg = "Geometric extras required for --perturber random_crop; install 'nrtk[graphics]'."
-        raise ImportError(msg) from exc
-    return RandomCropPerturber(crop_size=None, seed=seed)
 
 
 _PERTURBER_BUILDERS: dict[str, Callable[..., PerturbImage]] = {
     "brightness": _build_brightness,
     "gaussian_noise": _build_gaussian_noise,
     "pybsm_maritime": _build_pybsm_maritime,
-    "random_crop": _build_random_crop,
 }
 
 
