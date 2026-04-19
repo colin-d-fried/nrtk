@@ -114,7 +114,14 @@ def _load_pairs(*, clean_dir: Path, degraded_dir: Path, max_pairs: int | None) -
     pairs = [
         _read_pair(stem=stem, clean_path=clean_by_stem[stem], degraded_path=degraded_by_stem[stem]) for stem in shared
     ]
-    return [p for p in pairs if p is not None]
+    result = [p for p in pairs if p is not None]
+    if not result:
+        msg = (
+            f"All {len(shared)} matched pair(s) were skipped due to shape mismatches between "
+            f"{clean_dir} and {degraded_dir}. Pre-align image sizes before running the benchmark."
+        )
+        raise RuntimeError(msg)
+    return result
 
 
 def _build_brightness(*, severity: float, seed: int) -> PerturbImage:  # noqa: ARG001
@@ -141,7 +148,8 @@ def _build_pybsm_maritime(*, severity: float, seed: int) -> PerturbImage:
             "and you still see this, make sure the pybsm extra is installed: install 'nrtk[pybsm]'."
         )
         raise ImportError(msg) from exc
-    ihaze = 1 + int(round(severity * 2))
+    # pyBSM only accepts ihaze in {1, 2} (see pybsm_perturber_mixin validation).
+    ihaze = 1 + min(1, int(round(severity * 2)))
     return maritime_perturber(seed=seed, is_static=True, ihaze=ihaze)
 
 
