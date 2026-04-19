@@ -42,11 +42,11 @@ Pairs are matched by file **stem** across the two directories (so
 
 ## Supported perturbers
 
-| `--perturber`    | NRTK implementation                                                  | Extras required |
-| ---------------- | -------------------------------------------------------------------- | --------------- |
-| `brightness`     | `BrightnessPerturber(factor=1.0 + 0.9 * severity)`                   | none            |
-| `gaussian_noise` | `GaussianNoisePerturber(mean=0.0, var=0.0001 + 0.05 * severity)`     | none            |
-| `pybsm_maritime` | `maritime_perturber(ihaze=1 + round(severity * 2))` (Phase 3 preset) | `pybsm`         |
+| `--perturber`    | NRTK implementation                                                          | Extras required |
+| ---------------- | ---------------------------------------------------------------------------- | --------------- |
+| `brightness`     | `BrightnessPerturber(factor=1.0 + 0.9 * severity)`                           | none            |
+| `gaussian_noise` | `GaussianNoisePerturber(mean=0.0, var=0.0001 + 0.05 * severity)`             | none            |
+| `pybsm_maritime` | `maritime_perturber(ihaze=1 + min(1, round(severity * 2)))` (Phase 3 preset) | `pybsm`         |
 
 Geometric perturbers (e.g. `RandomCropPerturber`) are intentionally omitted from
 this scaffold because they require the image dimensions at construction time to
