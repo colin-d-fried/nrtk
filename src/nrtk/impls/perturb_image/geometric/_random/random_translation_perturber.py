@@ -120,6 +120,39 @@ class RandomTranslationPerturber(NumpyRandomPerturbImage):
         return final_image
 
     @staticmethod
+    def _apply_shift_to_masks(
+        *,
+        masks: np.ndarray[Any, Any],
+        translate_y: int,
+        translate_x: int,
+    ) -> np.ndarray[Any, Any]:
+        """Shift segmentation ``masks`` by ``(translate_y, translate_x)`` with a zero-fill border.
+
+        Supports both 2D single-class ``(H, W)`` masks and 3D multi-instance ``(N, H, W)``
+        stacks. For the 3D case, the instance axis (``0``) is left untouched and the spatial
+        axes ``(1, 2)`` are shifted, mirroring the convention used by
+        :meth:`RandomCropPerturber._apply_crop_to_masks`.
+        """
+        if masks.ndim not in (2, 3):
+            msg = f"Expected masks of ndim 2 (H, W) or 3 (N, H, W); got ndim={masks.ndim}."
+            raise ValueError(msg)
+
+        # For (H, W) the spatial axes are (0, 1). For (N, H, W) they are (1, 2).
+        spatial_axes: tuple[int, int] = (0, 1) if masks.ndim == 2 else (1, 2)
+        rolled = np.roll(masks.copy(), (translate_y, translate_x), axis=spatial_axes)
+        final = np.zeros_like(masks, dtype=masks.dtype)
+
+        # Build a pair of (final, rolled) slice tuples that operate on the spatial axes only.
+        y_slice = slice(translate_y, None) if translate_y >= 0 else slice(None, translate_y)
+        x_slice = slice(translate_x, None) if translate_x >= 0 else slice(None, translate_x)
+        if masks.ndim == 2:
+            index: tuple[slice, ...] = (y_slice, x_slice)
+        else:
+            index = (slice(None), y_slice, x_slice)
+        final[index] = rolled[index]
+        return final
+
+    @staticmethod
     def _clamp_shifted_vertex(
         *,
         vertex_x: float,
@@ -242,11 +275,10 @@ class RandomTranslationPerturber(NumpyRandomPerturbImage):
             translate_x=translate_x,
         )
         if masks is not None:
-            shifted_masks = RandomTranslationPerturber._apply_shift(
-                image=masks,
+            shifted_masks = RandomTranslationPerturber._apply_shift_to_masks(
+                masks=masks,
                 translate_y=translate_y,
                 translate_x=translate_x,
-                fill=None,
             )
         else:
             shifted_masks = None

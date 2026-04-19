@@ -128,3 +128,37 @@ class TestRandomTranslationMasks:
         )
         assert out_masks is not None
         np.testing.assert_array_equal(out_img, out_masks)
+
+    def test_3d_mask_multi_instance_preserves_instance_axis(self) -> None:
+        # Each of the N instance masks should shift in the spatial plane only: the sum of
+        # nonzero pixels in each instance slice must be preserved (minus any that fall off
+        # the exposed border), and shape must be (N, H, W).
+        perturber = RandomTranslationPerturber(seed=7, color_fill=[0, 0, 0])
+        img = np.zeros((8, 8, 3), dtype=np.uint8)
+        masks = np.zeros((3, 8, 8), dtype=np.int32)
+        # Give each instance a unique, distinguishable signature.
+        masks[0, 2:4, 2:4] = 1
+        masks[1, 4:6, 4:6] = 2
+        masks[2, 0:2, 6:8] = 3
+        _, _, out_masks = perturber.perturb_with_masks(
+            image=img,
+            masks=masks,
+            max_translation_limit=(2, 2),
+        )
+        assert out_masks is not None
+        assert out_masks.shape == (3, 8, 8)
+        # Instance-channel identity must be preserved (no cross-instance bleed).
+        for n in range(3):
+            nonzero_values = np.unique(out_masks[n][out_masks[n] != 0])
+            assert set(nonzero_values.tolist()).issubset({n + 1})
+
+    def test_invalid_mask_ndim_raises(self) -> None:
+        perturber = RandomTranslationPerturber(seed=0)
+        img = np.zeros((8, 8, 3), dtype=np.uint8)
+        bad_masks = np.zeros((1, 1, 8, 8), dtype=np.int32)
+        with pytest.raises(ValueError, match=r"Expected masks of ndim 2"):
+            perturber.perturb_with_masks(
+                image=img,
+                masks=bad_masks,
+                max_translation_limit=(2, 2),
+            )
