@@ -195,6 +195,7 @@ tox:notebooks:examples:
       - NOTEBOOK_DIR: "docs/examples"
         NOTEBOOK_FILE: [
           "albumentations_perturber.ipynb",
+          "embedding_validation.ipynb",
           "nrtk_tutorial.ipynb",
           "optical_perturbers.ipynb",
           "photometric_perturbers.ipynb",

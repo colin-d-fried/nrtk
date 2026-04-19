@@ -8,6 +8,7 @@ from .test_notebook_utils import list_error_messages, pyright_analyze
     ("filepath", "expected_num_errors"),
     [
         ("docs/examples/albumentations_perturber.ipynb", 0),
+        ("docs/examples/embedding_validation.ipynb", 0),
         ("docs/examples/generative_perturbers.ipynb", 0),
         ("docs/examples/nrtk_tutorial.ipynb", 0),
         ("docs/examples/optical_perturbers.ipynb", 0),
