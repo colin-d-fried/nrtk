@@ -8,10 +8,10 @@ Additions
   that applies an NRTK perturber to clean reference imagery and scores the
   result against a directory of real degraded counterparts using SSIM,
   PSNR, and an FID stub.
-* The CLI accepts four perturber presets out of the box
-  (``brightness``, ``gaussian_noise``, ``pybsm_maritime``, ``random_crop``)
-  mapped to Phase 2 and Phase 3 implementations; the optical preset reuses
-  the Phase 3 ``maritime_perturber`` factory.
+* The CLI accepts three perturber presets out of the box
+  (``brightness``, ``gaussian_noise``, ``pybsm_maritime``) mapped to the
+  Phase 2 and Phase 3 implementations; the optical preset reuses the
+  Phase 3 ``maritime_perturber`` factory.
 * Writes ``per_pair.csv`` with one row per image pair and ``summary.txt``
   with mean / std / min / max per metric to the user-specified output
   directory.
