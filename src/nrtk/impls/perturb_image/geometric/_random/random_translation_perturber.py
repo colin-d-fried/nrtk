@@ -71,8 +71,134 @@ class RandomTranslationPerturber(NumpyRandomPerturbImage):
         super().__init__(seed=seed, is_static=is_static)
         self.color_fill: np.ndarray[np.int64, Any] = np.array(color_fill)
 
+    def _sample_translate(
+        self,
+        *,
+        image_shape: tuple[int, ...],
+        max_translation_limit: tuple[int, int] | None,
+    ) -> tuple[int, int]:
+        """Sample a random ``(translate_y, translate_x)`` shift honoring the optional limit."""
+        if max_translation_limit is None:
+            translate_h, translate_w = (image_shape[0], image_shape[1])
+        else:
+            translate_h, translate_w = max_translation_limit
+
+        if abs(translate_h) > image_shape[0] or abs(translate_w) > image_shape[1]:
+            raise ValueError(f"Max translation limit should be less than or equal to {image_shape[:2]}")
+
+        translate_x, translate_y = (0, 0)
+        if translate_w > 0:
+            translate_x = int(self._rng.integers(low=-translate_w, high=translate_w))
+        if translate_h > 0:
+            translate_y = int(self._rng.integers(low=-translate_h, high=translate_h))
+        return translate_y, translate_x
+
+    @staticmethod
+    def _apply_shift(
+        *,
+        image: np.ndarray[Any, Any],
+        translate_y: int,
+        translate_x: int,
+        fill: np.ndarray[Any, Any] | None = None,
+    ) -> np.ndarray[Any, Any]:
+        """Roll ``image`` by ``(translate_y, translate_x)`` and fill the exposed border with ``fill``."""
+        if image.ndim == 3 and fill is not None:
+            final_image = np.full_like(image, fill.astype(image.dtype), dtype=image.dtype)
+        else:
+            final_image = np.zeros_like(image, dtype=image.dtype)
+
+        rolled = np.roll(image.copy(), (translate_y, translate_x), axis=(0, 1))
+
+        if translate_x >= 0 and translate_y >= 0:
+            final_image[translate_y:, translate_x:, ...] = rolled[translate_y:, translate_x:, ...]
+        elif translate_x < 0 and translate_y >= 0:
+            final_image[translate_y:, :translate_x, ...] = rolled[translate_y:, :translate_x, ...]
+        elif translate_x >= 0 and translate_y < 0:
+            final_image[:translate_y, translate_x:, ...] = rolled[:translate_y, translate_x:, ...]
+        else:
+            final_image[:translate_y, :translate_x, ...] = rolled[:translate_y, :translate_x, ...]
+        return final_image
+
+    @staticmethod
+    def _apply_shift_to_masks(
+        *,
+        masks: np.ndarray[Any, Any],
+        translate_y: int,
+        translate_x: int,
+    ) -> np.ndarray[Any, Any]:
+        """Shift segmentation ``masks`` by ``(translate_y, translate_x)`` with a zero-fill border.
+
+        Supports both 2D single-class ``(H, W)`` masks and 3D multi-instance ``(N, H, W)``
+        stacks. For the 3D case, the instance axis (``0``) is left untouched and the spatial
+        axes ``(1, 2)`` are shifted, mirroring the convention used by
+        :meth:`RandomCropPerturber._apply_crop_to_masks`.
+        """
+        if masks.ndim not in (2, 3):
+            msg = f"Expected masks of ndim 2 (H, W) or 3 (N, H, W); got ndim={masks.ndim}."
+            raise ValueError(msg)
+
+        # For (H, W) the spatial axes are (0, 1). For (N, H, W) they are (1, 2).
+        spatial_axes: tuple[int, int] = (0, 1) if masks.ndim == 2 else (1, 2)
+        rolled = np.roll(masks.copy(), (translate_y, translate_x), axis=spatial_axes)
+        final = np.zeros_like(masks, dtype=masks.dtype)
+
+        # Build a pair of (final, rolled) slice tuples that operate on the spatial axes only.
+        y_slice = slice(translate_y, None) if translate_y >= 0 else slice(None, translate_y)
+        x_slice = slice(translate_x, None) if translate_x >= 0 else slice(None, translate_x)
+        if masks.ndim == 2:
+            index: tuple[slice, ...] = (y_slice, x_slice)
+        else:
+            index = (slice(None), y_slice, x_slice)
+        final[index] = rolled[index]
+        return final
+
+    @staticmethod
+    def _clamp_shifted_vertex(
+        *,
+        vertex_x: float,
+        vertex_y: float,
+        max_x: float,
+        max_y: float,
+    ) -> tuple[float, float]:
+        if vertex_x < 0:
+            vertex_x = 0
+        elif vertex_x > max_x:
+            vertex_x = max_x
+        if vertex_y < 0:
+            vertex_y = 0
+        elif vertex_y > max_y:
+            vertex_y = max_y
+        return vertex_x, vertex_y
+
+    @staticmethod
+    def _shift_boxes(
+        *,
+        boxes: Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None,
+        translate_y: int,
+        translate_x: int,
+    ) -> list[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]]:
+        perturbed_boxes: list[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] = []
+        if boxes is None:
+            return perturbed_boxes
+        for bbox, metadata in boxes:
+            shifted_min = RandomTranslationPerturber._clamp_shifted_vertex(
+                vertex_x=bbox.min_vertex[0] + translate_x,
+                vertex_y=bbox.min_vertex[1] + translate_y,
+                max_x=bbox.max_vertex[0],
+                max_y=bbox.max_vertex[1],
+            )
+            shifted_max = RandomTranslationPerturber._clamp_shifted_vertex(
+                vertex_x=bbox.max_vertex[0] + translate_x,
+                vertex_y=bbox.max_vertex[1] + translate_y,
+                max_x=bbox.max_vertex[0],
+                max_y=bbox.max_vertex[1],
+            )
+            adjusted_box = AxisAlignedBoundingBox(min_vertex=shifted_min, max_vertex=shifted_max)
+            perturbed_boxes.append((adjusted_box, deepcopy(metadata)))
+        return perturbed_boxes
+
     @override
-    def perturb(  # noqa: C901 - translation logic with directional boundary checks
+    def perturb(
         self,
         *,
         image: np.ndarray[Any, Any],
@@ -97,89 +223,66 @@ class RandomTranslationPerturber(NumpyRandomPerturbImage):
             Translated image with the modified bounding boxes.
         """
         perturbed_image, perturbed_boxes = super().perturb(image=image, boxes=boxes, **kwargs)
+        translate_y, translate_x = self._sample_translate(
+            image_shape=perturbed_image.shape,
+            max_translation_limit=max_translation_limit,
+        )
+        final_image = RandomTranslationPerturber._apply_shift(
+            image=perturbed_image,
+            translate_y=translate_y,
+            translate_x=translate_x,
+            fill=self.color_fill,
+        )
+        perturbed_boxes = RandomTranslationPerturber._shift_boxes(
+            boxes=boxes,
+            translate_y=translate_y,
+            translate_x=translate_x,
+        )
+        return final_image, perturbed_boxes
 
-        if max_translation_limit is None:
-            translate_h, translate_w = (perturbed_image.shape[0], perturbed_image.shape[1])
-        else:
-            translate_h, translate_w = max_translation_limit
+    @override
+    def perturb_with_masks(
+        self,
+        *,
+        image: np.ndarray[Any, Any],
+        boxes: Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None = None,
+        masks: np.ndarray[Any, Any] | None = None,
+        max_translation_limit: tuple[int, int] | None = None,
+        **kwargs: Any,
+    ) -> tuple[
+        np.ndarray[Any, Any],
+        Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None,
+        np.ndarray[Any, Any] | None,
+    ]:
+        """Randomly translate an image, boxes, and optional segmentation masks with a shared shift.
 
-        if abs(translate_h) > perturbed_image.shape[0] or abs(translate_w) > perturbed_image.shape[1]:
-            raise ValueError(f"Max translation limit should be less than or equal to {perturbed_image.shape[:2]}")
-
-        # Randomly select the translation magnitude for each direction
-        translate_x, translate_y = (0, 0)
-        if translate_w > 0:
-            translate_x = self._rng.integers(low=-translate_w, high=translate_w)
-        if translate_h > 0:
-            translate_y = self._rng.integers(low=-translate_h, high=translate_h)
-
-        # Apply background color fill based on the number of image dimensions
-        if perturbed_image.ndim == 3:
-            final_image = np.full_like(
-                perturbed_image,
-                self.color_fill.astype(perturbed_image.dtype),
-                dtype=perturbed_image.dtype,
+        Masks are shifted with a zero-fill border (background class 0) regardless of ``color_fill``.
+        """
+        perturbed_image, _ = super().perturb(image=image, boxes=boxes, **kwargs)
+        translate_y, translate_x = self._sample_translate(
+            image_shape=perturbed_image.shape,
+            max_translation_limit=max_translation_limit,
+        )
+        final_image = RandomTranslationPerturber._apply_shift(
+            image=perturbed_image,
+            translate_y=translate_y,
+            translate_x=translate_x,
+            fill=self.color_fill,
+        )
+        perturbed_boxes = RandomTranslationPerturber._shift_boxes(
+            boxes=boxes,
+            translate_y=translate_y,
+            translate_x=translate_x,
+        )
+        if masks is not None:
+            shifted_masks = RandomTranslationPerturber._apply_shift_to_masks(
+                masks=masks,
+                translate_y=translate_y,
+                translate_x=translate_x,
             )
         else:
-            final_image = np.zeros_like(perturbed_image, dtype=perturbed_image.dtype)
-
-        # Perform the translation
-        translated_image = np.roll(perturbed_image.copy(), (translate_y, translate_x), axis=[0, 1])
-
-        # Apply the valid translated image region to the final background image
-        if translate_x >= 0 and translate_y >= 0:
-            final_image[translate_y:, translate_x:, ...] = translated_image[translate_y:, translate_x:, ...]
-        elif translate_x < 0 and translate_y >= 0:
-            final_image[translate_y:, :translate_x, ...] = translated_image[translate_y:, :translate_x, ...]
-        elif translate_x >= 0 and translate_y < 0:
-            final_image[:translate_y, translate_x:, ...] = translated_image[:translate_y, translate_x:, ...]
-        else:
-            final_image[:translate_y, :translate_x, ...] = translated_image[:translate_y, :translate_x, ...]
-
-        # Adjust bounding boxes
-        perturbed_boxes = []
-        if boxes is not None:
-            for bbox, metadata in boxes:
-                # Compute the shifted_min coords for the bounding box to align with
-                # the translated min_vertex coordinates
-                shifted_min_x = bbox.min_vertex[0] + translate_x
-                shifted_min_y = bbox.min_vertex[1] + translate_y
-
-                # Check boundary conditions for the shifted_min bounding box coordinates
-                if shifted_min_x < 0:
-                    shifted_min_x = 0
-                elif shifted_min_x > bbox.max_vertex[0]:
-                    shifted_min_x = bbox.max_vertex[0]
-                if shifted_min_y < 0:
-                    shifted_min_y = 0
-                elif shifted_min_y > bbox.max_vertex[1]:
-                    shifted_min_y = bbox.max_vertex[1]
-
-                shifted_min = (shifted_min_x, shifted_min_y)
-
-                # Compute the shifted_max coords for the bounding box to align with
-                # the translated max_vertex coordinates
-                shifted_max_x = bbox.max_vertex[0] + translate_x
-                shifted_max_y = bbox.max_vertex[1] + translate_y
-
-                # Assign boundary conditions for the shifted_max bounding box coordinates
-                if shifted_max_x < 0:
-                    shifted_max_x = 0
-                elif shifted_max_x > bbox.max_vertex[0]:
-                    shifted_max_x = bbox.max_vertex[0]
-                if shifted_max_y < 0:
-                    shifted_max_y = 0
-                elif shifted_max_y > bbox.max_vertex[1]:
-                    shifted_max_y = bbox.max_vertex[1]
-
-                shifted_max = (shifted_max_x, shifted_max_y)
-
-                # Apply the shifted coordinates to the output bounding box
-                adjusted_box = AxisAlignedBoundingBox(min_vertex=shifted_min, max_vertex=shifted_max)
-                perturbed_boxes.append((adjusted_box, deepcopy(metadata)))
-
-        perturbed_image = final_image
-        return perturbed_image, perturbed_boxes
+            shifted_masks = None
+        return final_image, perturbed_boxes, shifted_masks
 
     @override
     def get_config(self) -> dict[str, Any]:

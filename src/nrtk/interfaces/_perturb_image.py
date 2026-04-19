@@ -50,6 +50,7 @@ class PerturbImage(Plugfigurable):
         *,
         image: np.ndarray[Any, Any],
         boxes: Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None = None,
+        masks: np.ndarray[Any, Any] | None = None,
         **kwargs: Any,
     ) -> tuple[np.ndarray[Any, Any], Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None]:
         """Generate a perturbed image for the given image stimulus.
@@ -63,6 +64,12 @@ class PerturbImage(Plugfigurable):
             boxes:
                 Input bounding boxes as a Iterable of tuples containing bounding boxes.
                 This is the single image output from DetectImageObjects.detect_objects
+            masks:
+                Optional segmentation masks aligned to ``image``. Photometric / noise
+                perturbers leave masks untouched; geometric perturbers should override
+                :meth:`perturb_with_masks` (see below) to apply the same spatial transform
+                to the masks. Ignored by this base ``perturb`` method -- to actually receive
+                transformed masks, use :meth:`perturb_with_masks` instead.
             kwargs:
                 Implementation-specific keyword arguments.
 
@@ -73,6 +80,51 @@ class PerturbImage(Plugfigurable):
                 modifies the size of an image, it is expected to modify the bounding boxes as well.
         """
         return np.copy(image), deepcopy(boxes)
+
+    def perturb_with_masks(
+        self,
+        *,
+        image: np.ndarray[Any, Any],
+        boxes: Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None = None,
+        masks: np.ndarray[Any, Any] | None = None,
+        **kwargs: Any,
+    ) -> tuple[
+        np.ndarray[Any, Any],
+        Iterable[tuple[AxisAlignedBoundingBox, dict[Hashable, float]]] | None,
+        np.ndarray[Any, Any] | None,
+    ]:
+        """Perturb an image alongside aligned segmentation masks.
+
+        Default behavior: call :meth:`perturb` and return ``masks`` unchanged (a deep copy
+        when provided). Geometric perturbers (crop, translation, rotation, scale, ...) should
+        override this method to apply the same spatial transform to ``masks`` that they
+        apply to ``image``.
+
+        Args:
+            image:
+                Input image as a numpy array.
+            boxes:
+                Optional bounding boxes, same format as :meth:`perturb`.
+            masks:
+                Optional segmentation masks aligned to ``image``. Shape is implementation
+                defined but must match the spatial dimensions of ``image`` (either
+                ``(H, W)`` or ``(N, H, W)`` for multi-instance masks).
+            kwargs:
+                Implementation-specific keyword arguments forwarded to :meth:`perturb`.
+
+        Returns:
+            A tuple of ``(perturbed_image, perturbed_boxes, perturbed_masks)``. Default
+            implementations return ``deepcopy(masks)``; geometric subclasses should return
+            a spatially-transformed masks array.
+        """
+        perturbed_image, perturbed_boxes = self.perturb(
+            image=image,
+            boxes=boxes,
+            masks=masks,
+            **kwargs,
+        )
+        perturbed_masks = deepcopy(masks) if masks is not None else None
+        return perturbed_image, perturbed_boxes, perturbed_masks
 
     def _rescale_boxes(
         self,
