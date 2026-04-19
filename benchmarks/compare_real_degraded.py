@@ -67,6 +67,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/compare_real_degraded"))
     parser.add_argument("--max-pairs", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--img-gsd",
+        type=float,
+        default=None,
+        help=(
+            "Ground sample distance in metres/pixel. Required by pyBSM-based perturbers "
+            "(e.g. --perturber pybsm_maritime); ignored by other perturbers."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -230,9 +239,15 @@ def _evaluate_pair(
     pair: ImagePair,
     perturber: PerturbImage,
     metric_fns: dict[str, Callable[[np.ndarray, np.ndarray], float]],
+    perturb_kwargs: dict[str, Any],
 ) -> dict[str, Any]:
-    """Apply ``perturber`` to ``pair.clean`` and score against ``pair.degraded``."""
-    synthetic, _ = perturber.perturb(image=pair.clean)
+    """Apply ``perturber`` to ``pair.clean`` and score against ``pair.degraded``.
+
+    ``perturb_kwargs`` carries optional per-perturber extras (e.g. ``img_gsd``
+    for pyBSM-based perturbers). Non-consuming perturbers ignore unknown kwargs
+    because :meth:`PerturbImage.perturb` accepts ``**kwargs``.
+    """
+    synthetic, _ = perturber.perturb(image=pair.clean, **perturb_kwargs)
     synthetic = synthetic if synthetic.dtype == np.uint8 else synthetic.astype(np.uint8)
     synthetic_aligned, real_aligned = _align_shapes(a=synthetic, b=pair.degraded)
     scores: dict[str, Any] = {"stem": pair.stem}
@@ -286,7 +301,14 @@ def main(argv: list[str] | None = None) -> int:
     perturber = _build_perturber(name=args.perturber, severity=args.severity, seed=args.seed)
     metric_fns = _resolve_metric_fns(args.metrics)
 
-    per_pair = [_evaluate_pair(pair=pair, perturber=perturber, metric_fns=metric_fns) for pair in pairs]
+    perturb_kwargs: dict[str, Any] = {}
+    if args.img_gsd is not None:
+        perturb_kwargs["img_gsd"] = args.img_gsd
+
+    per_pair = [
+        _evaluate_pair(pair=pair, perturber=perturber, metric_fns=metric_fns, perturb_kwargs=perturb_kwargs)
+        for pair in pairs
+    ]
 
     _write_report(
         output_dir=args.output_dir,
