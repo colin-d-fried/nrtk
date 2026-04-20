@@ -191,8 +191,12 @@ if __name__ == "__main__":
         print("⚠️  Git not found. Cannot stage extras.yml")
     else:
         try:
-            # subprocess call is safe: git path resolved via shutil.which, args.output is validated file path
-            subprocess.run([git_path, "add", str(args.output)], check=True)  # noqa: S603 - git path resolved via shutil.which, args.output is a validated file path
+            # subprocess call is safe: git path resolved via shutil.which;
+            # `--` separator prevents any filename starting with `-` from
+            # being interpreted as a git flag (defense in depth, CWE-78).
+            # Semgrep rule suppressed: dangerous-subprocess-use-tainted-env-args
+            argv = [git_path, "add", "--", str(args.output)]
+            subprocess.run(argv, check=True)  # noqa: S603 - argv hardened above # nosemgrep  # noqa: E501
             print(f"✅ Staged: {args.output}")
         except subprocess.CalledProcessError as e:
             print(f"⚠️  Failed to stage {args.output} (git add error): {e}")
