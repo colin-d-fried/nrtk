@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
     && apt-get -y upgrade \
-    && apt-get install -y curl build-essential libgl1 libglib2.0-0 \
+    && apt-get install -y --no-install-recommends curl build-essential libgl1 libglib2.0-0 \
     && apt-get purge -y linux-libc-dev \
     && rm -rf /var/lib/apt/lists/*
 
