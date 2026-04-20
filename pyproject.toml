@@ -66,7 +66,7 @@ maite = [
 ]
 tools = [
     "kwcoco>=0.2.18",
-    "Pillow>=12.1.1",  # GHSA-cfh3-3jmp-rvhc
+    "Pillow>=12.2.0",  # CVE-2026-40192
     "click>=8.0.0",
     "fastapi>=0.110.0",
     "uvicorn>=0.29.0",
@@ -78,14 +78,14 @@ skimage = [
     "scikit-image>=0.20; python_version < '3.12'",
     "scikit-image>=0.22; python_version >= '3.12'"
 ]
-pillow = ["Pillow>=12.1.1"]  # GHSA-cfh3-3jmp-rvhc
+pillow = ["Pillow>=12.2.0"]  # CVE-2026-40192
 albumentations = ["nrtk-albumentations>=2.2.1"]
 waterdroplet = ["scipy>=1.10.0", "numba>=0.56.4"]
 diffusion = [
     "torch>=2.6.0",  # GHSA-53q9-r3pm-6pq6
     "diffusers>=0.21.0",
     "accelerate>=0.20.0",
-    "Pillow>=12.1.1",  # GHSA-cfh3-3jmp-rvhc
+    "Pillow>=12.2.0",  # CVE-2026-40192
     "transformers>=4.53.0",  # CVE-2025-6921
     "protobuf>=6.33.5",  # GHSA-8qvm-5x2c-j2w7, CVE-2026-0994
 ]
@@ -126,7 +126,7 @@ tests = [
     "pytest-cov>=4.0.0", # reports code coverage
     "pytest-xdist>=3.8.0", # allows -n auto|# to be used to run pytests in parallel
     "syrupy>=5.0.0", # required for snapshot/regression testing
-    "Pillow>=12.1.1",  # GHSA-cfh3-3jmp-rvhc  # required for custom conftest.py fixtures
+    "Pillow>=12.2.0",  # CVE-2026-40192  # required for custom conftest.py fixtures
     "responses>=0.25.0", # rquired to test FastAPI (used by entrypoint app)
     "httpx>=0.22.0", # required by starlette.testclient.TestClient (optional dep of starlette, not installed by default)
 ]
